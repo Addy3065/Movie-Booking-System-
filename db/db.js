@@ -1,5 +1,5 @@
 const { Pool } = require("pg");
-require("dotenv").config();
+require("dotenv").config(); // to acces data from .env file without actually showing our sensitive INFO
 
 const pool = new Pool({
   user: process.env.DB_USER,
@@ -16,12 +16,10 @@ pool.on("error", (err) => {
 });
 
 // Quick sanity check on startup — confirms credentials + DB are reachable
-pool.query("SELECT NOW()", (err, res) => {
-  if (err) {
-    console.error("❌ Database connection failed:", err.message);
-  } else {
-    console.log("✅ Database connected at", res.rows[0].now);
-  }
-});
+// A promise server.js can await before starting
+async function checkConnection() {
+  const res = await pool.query("SELECT NOW()");
+  console.log("✅ Database connected at", res.rows[0].now);
+}
 
-module.exports = pool;
+module.exports = { pool, checkConnection };
