@@ -36,6 +36,7 @@ app.use("/api/cinemas", cinemaRoutes);
 app.use("/api/shows", showRoutes);
 app.use("/api/seatmap", seatMapRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/bookings", require("./src/routes/bookings"));
 
 async function start() {
   try {

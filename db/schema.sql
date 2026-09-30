@@ -87,7 +87,7 @@ CREATE INDEX idx_shows_show_time ON shows(show_time);
 
 -- ---------------------------------------------------------
 -- 8. show_seats (per-show availability of each physical seat)
---    This is the table seat-locking logic (Phase 6) will operate on.
+--    This is the table seat-locking logic (Phase 5) operates on.
 -- ---------------------------------------------------------
 CREATE TABLE show_seats (
     show_seat_id   SERIAL PRIMARY KEY,
@@ -96,12 +96,12 @@ CREATE TABLE show_seats (
     status         VARCHAR(20) NOT NULL DEFAULT 'available'
                    CHECK (status IN ('available', 'locked', 'booked')),
     locked_until   TIMESTAMP,
+    locked_by      INT REFERENCES users(user_id) ON DELETE SET NULL,
     UNIQUE (show_id, seat_id)  -- one row per physical seat per show
 );
 
 CREATE INDEX idx_show_seats_show_id ON show_seats(show_id);
 CREATE INDEX idx_show_seats_status ON show_seats(status);
-
 -- ---------------------------------------------------------
 -- 9. bookings
 -- ---------------------------------------------------------
