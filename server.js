@@ -1,6 +1,7 @@
 const express = require("express");
 require("dotenv").config();
 const { pool, checkConnection } = require("./db/db");
+const { startExpirySweeper } = require("./src/utils/expirySweeper");
 
 const movieRoutes = require("./src/routes/movieRoutes");
 const cinemaRoutes = require("./src/routes/cinemaRoutes");
@@ -37,6 +38,7 @@ app.use("/api/shows", showRoutes);
 app.use("/api/seatmap", seatMapRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/bookings", require("./src/routes/bookings"));
+app.use("/api/payments", require("./src/routes/payments"));
 
 async function start() {
   try {
@@ -48,6 +50,7 @@ async function start() {
 
   app.listen(PORT, () => {
     console.log(`🚀 Server running on http://localhost:${PORT}`);
+    startExpirySweeper();
   });
 }
 

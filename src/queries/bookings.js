@@ -41,6 +41,7 @@ async function releaseStalePendingBookings(client, ids) {
        UPDATE bookings
        SET status = 'cancelled'
        WHERE booking_id IN (SELECT booking_id FROM stale)
+         AND status = 'pending'
        RETURNING booking_id
      )
      DELETE FROM booking_seats
