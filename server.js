@@ -7,6 +7,7 @@ const movieRoutes = require("./src/routes/movieRoutes");
 const cinemaRoutes = require("./src/routes/cinemaRoutes");
 const showRoutes = require("./src/routes/showRoutes");
 const seatMapRoutes = require("./src/routes/seatMapRoutes");
+const adminRoutes = require("./src/routes/admin");
 
 const authRoutes = require("./src/routes/auth");
 
@@ -39,6 +40,7 @@ app.use("/api/seatmap", seatMapRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/bookings", require("./src/routes/bookings"));
 app.use("/api/payments", require("./src/routes/payments"));
+app.use("/api/admin", adminRoutes);
 
 async function start() {
   try {

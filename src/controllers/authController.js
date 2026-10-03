@@ -42,7 +42,11 @@ async function login(req, res) {
     return res.status(401).json({ error: "Invalid credentials" });
   }
 
-  const token = signToken({ userId: user.user_id, email: user.email });
+  const token = signToken({
+    userId: user.user_id,
+    email: user.email,
+    role: user.role,
+  });
   res.json({
     user: { user_id: user.user_id, name: user.name, email: user.email },
     token,
