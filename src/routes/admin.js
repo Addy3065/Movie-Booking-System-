@@ -6,6 +6,7 @@ const {
   updateMovieHandler,
   deleteMovieHandler,
 } = require("../controllers/adminMovieController");
+const { createShowHandler } = require("../controllers/adminShowController");
 
 const router = express.Router();
 
@@ -14,5 +15,7 @@ router.use(requireAuth, requireAdmin);
 router.post("/movies", createMovieHandler);
 router.put("/movies/:id", updateMovieHandler);
 router.delete("/movies/:id", deleteMovieHandler);
+
+router.post("/shows", createShowHandler);
 
 module.exports = router;
