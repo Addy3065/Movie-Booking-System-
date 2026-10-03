@@ -1,13 +1,18 @@
 const express = require("express");
 const { requireAuth } = require("../middleware/auth");
 const requireAdmin = require("../middleware/requireAdmin");
+const {
+  createMovieHandler,
+  updateMovieHandler,
+  deleteMovieHandler,
+} = require("../controllers/adminMovieController");
 
 const router = express.Router();
 
 router.use(requireAuth, requireAdmin);
 
-router.get("/ping", (req, res) => {
-  res.json({ message: "admin ok", user: req.user });
-});
+router.post("/movies", createMovieHandler);
+router.put("/movies/:id", updateMovieHandler);
+router.delete("/movies/:id", deleteMovieHandler);
 
 module.exports = router;
