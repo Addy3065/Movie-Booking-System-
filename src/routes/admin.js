@@ -6,7 +6,10 @@ const {
   updateMovieHandler,
   deleteMovieHandler,
 } = require("../controllers/adminMovieController");
-const { createShowHandler } = require("../controllers/adminShowController");
+const {
+  createShowHandler,
+  deleteShowHandler,
+} = require("../controllers/adminShowController");
 
 const router = express.Router();
 
@@ -17,5 +20,6 @@ router.put("/movies/:id", updateMovieHandler);
 router.delete("/movies/:id", deleteMovieHandler);
 
 router.post("/shows", createShowHandler);
+router.delete("/shows/:id", deleteShowHandler);
 
 module.exports = router;

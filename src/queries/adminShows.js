@@ -28,6 +28,14 @@ function parseShow({ movie_id, screen_id, show_time, base_price }) {
   };
 }
 
+function parseShowId(id) {
+  const n = Number(id);
+  if (!Number.isInteger(n) || n <= 0) {
+    throw httpError(400, "show id must be a positive integer");
+  }
+  return n;
+}
+
 async function createShow(client, body) {
   const { mid, sid, showTime, price } = parseShow(body);
 
@@ -96,4 +104,59 @@ async function createShow(client, body) {
   return { show, seatsCreated: seatRows.length };
 }
 
-module.exports = { createShow };
+async function deleteShow(client, id) {
+  const showId = parseShowId(id);
+
+  const { rows: showRows } = await client.query(
+    "SELECT show_id FROM shows WHERE show_id = $1",
+    [showId],
+  );
+  if (showRows.length === 0) {
+    throw httpError(404, "Show not found");
+  }
+
+  const { rows: seats } = await client.query(
+    `SELECT ss.show_seat_id,
+            ss.status,
+            (ss.locked_until IS NOT NULL AND ss.locked_until > NOW()) AS lock_active,
+            EXISTS (
+              SELECT 1 FROM booking_seats bs
+              WHERE bs.show_seat_id = ss.show_seat_id
+            ) AS has_booking
+     FROM show_seats ss
+     WHERE ss.show_id = $1
+     ORDER BY ss.show_seat_id
+     FOR UPDATE OF ss`,
+    [showId],
+  );
+
+  const blocked = seats
+    .filter(
+      (r) =>
+        r.has_booking ||
+        r.status === "booked" ||
+        (r.status === "locked" && r.lock_active),
+    )
+    .map((r) => r.show_seat_id);
+
+  if (blocked.length > 0) {
+    const err = httpError(
+      409,
+      "Show has bookings or seats currently held; it cannot be deleted",
+    );
+    err.unavailable = blocked;
+    throw err;
+  }
+
+  const { rows } = await client.query(
+    "DELETE FROM shows WHERE show_id = $1 RETURNING show_id",
+    [showId],
+  );
+  if (rows.length === 0) {
+    throw httpError(404, "Show not found");
+  }
+
+  return { showId: rows[0].show_id, seatsRemoved: seats.length };
+}
+
+module.exports = { createShow, deleteShow };
