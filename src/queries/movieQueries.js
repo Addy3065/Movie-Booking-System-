@@ -1,4 +1,4 @@
-const pool = require("../../db/db");
+const { pool } = require("../../db/db");
 
 const getAllMovies = async () => {
   const result = await pool.query("SELECT * FROM movies ORDER BY title");

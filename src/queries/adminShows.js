@@ -1,39 +1,19 @@
 const { httpError } = require("../utils/httpError");
+const { parsePositiveInt, parsePrice } = require("../utils/validate");
 
 const TIME_FORMAT = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?$/;
+const MAX_PRICE = 999999.99;
 
 function parseShow({ movie_id, screen_id, show_time, base_price }) {
-  const mid = Number(movie_id);
-  const sid = Number(screen_id);
-  const price = Number(base_price);
+  const mid = parsePositiveInt(movie_id, "movie_id");
+  const sid = parsePositiveInt(screen_id, "screen_id");
 
-  if (!Number.isInteger(mid) || mid <= 0) {
-    throw httpError(400, "movie_id must be a positive integer");
-  }
-  if (!Number.isInteger(sid) || sid <= 0) {
-    throw httpError(400, "screen_id must be a positive integer");
-  }
   if (typeof show_time !== "string" || !TIME_FORMAT.test(show_time.trim())) {
     throw httpError(400, "show_time must look like 2027-01-15T18:00:00");
   }
-  if (!Number.isFinite(price) || price <= 0 || price >= 1000000) {
-    throw httpError(400, "base_price must be a positive number below 1000000");
-  }
+  const price = parsePrice(base_price, "base_price", { max: MAX_PRICE });
 
-  return {
-    mid,
-    sid,
-    showTime: show_time.trim(),
-    price: price.toFixed(2),
-  };
-}
-
-function parseShowId(id) {
-  const n = Number(id);
-  if (!Number.isInteger(n) || n <= 0) {
-    throw httpError(400, "show id must be a positive integer");
-  }
-  return n;
+  return { mid, sid, showTime: show_time.trim(), price };
 }
 
 async function createShow(client, body) {
@@ -75,12 +55,9 @@ async function createShow(client, body) {
     [sid, showTime, duration],
   );
   if (clash.length > 0) {
-    const err = httpError(
-      409,
-      "Screen already has a show overlapping this time",
-    );
-    err.unavailable = [clash[0].show_id];
-    throw err;
+    throw httpError(409, "Screen already has a show overlapping this time", {
+      conflictingShows: [clash[0].show_id],
+    });
   }
 
   const { rows: showRows } = await client.query(
@@ -105,7 +82,7 @@ async function createShow(client, body) {
 }
 
 async function deleteShow(client, id) {
-  const showId = parseShowId(id);
+  const showId = parsePositiveInt(id, "show id");
 
   const { rows: showRows } = await client.query(
     "SELECT show_id FROM shows WHERE show_id = $1",
@@ -140,12 +117,11 @@ async function deleteShow(client, id) {
     .map((r) => r.show_seat_id);
 
   if (blocked.length > 0) {
-    const err = httpError(
+    throw httpError(
       409,
       "Show has bookings or seats currently held; it cannot be deleted",
+      { unavailable: blocked },
     );
-    err.unavailable = blocked;
-    throw err;
   }
 
   const { rows } = await client.query(

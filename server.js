@@ -2,6 +2,7 @@ const express = require("express");
 require("dotenv").config();
 const { pool, checkConnection } = require("./db/db");
 const { startExpirySweeper } = require("./src/utils/expirySweeper");
+const { notFound, errorHandler } = require("./src/middleware/errorHandler");
 
 const movieRoutes = require("./src/routes/movieRoutes");
 const cinemaRoutes = require("./src/routes/cinemaRoutes");
@@ -14,7 +15,7 @@ const authRoutes = require("./src/routes/auth");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json());
+app.use(express.json()); // parsing incoming http requestions with json payload
 
 // Temporary health-check route to confirm server + DB are alive
 app.get("/health", async (req, res) => {
@@ -41,8 +42,14 @@ app.use("/api/auth", authRoutes);
 app.use("/api/bookings", require("./src/routes/bookings"));
 app.use("/api/payments", require("./src/routes/payments"));
 app.use("/api/admin", adminRoutes);
+app.use(notFound);
+app.use(errorHandler);
 
 async function start() {
+  if (!process.env.JWT_SECRET) {
+    console.error("❌ JWT_SECRET is not set");
+    process.exit(-1);
+  }
   try {
     await checkConnection(); // blocks here until DB confirms — or throws
   } catch (err) {

@@ -1,15 +1,14 @@
 const { httpError } = require("../utils/httpError");
+const { parsePositiveInt } = require("../utils/validate");
 
 function parsePaymentRequest({ bookingId, simulate, userId }) {
   const uid = Number(userId);
-  const bid = Number(bookingId);
 
   if (!Number.isInteger(uid) || uid <= 0) {
     throw httpError(401, "Invalid user");
   }
-  if (!Number.isInteger(bid) || bid <= 0) {
-    throw httpError(400, "bookingId must be a positive integer");
-  }
+  const bid = parsePositiveInt(bookingId, "bookingId");
+
   if (simulate !== "success" && simulate !== "failure") {
     throw httpError(400, "simulate must be 'success' or 'failure'");
   }

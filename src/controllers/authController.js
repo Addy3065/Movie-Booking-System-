@@ -1,45 +1,73 @@
 const bcrypt = require("bcrypt");
 const { findUserByEmail, createUser } = require("../queries/users");
 const { signToken } = require("../utils/jwt");
+const { httpError } = require("../utils/httpError");
+const { parseString, parseEmail, parsePassword } = require("../utils/validate");
 
-const SALT_ROUNDS = 10;
+const SALT_ROUNDS = 10; // determines the computational time to calculate hash function         on server computation is increased to tackle brute-force attacks
+const MIN_PASSWORD_LENGTH = 8; // for security
+const DUMMY_HASH = bcrypt.hashSync("not-a-real-password", SALT_ROUNDS);
 
 async function register(req, res) {
-  const { name, email, password } = req.body;
+  const body = req.body || {};
 
-  if (!name || !email || !password) {
-    return res
-      .status(400)
-      .json({ error: "name, email, and password are required" });
+  if (!body.name || !body.email || !body.password) {
+    throw httpError(400, "name, email, and password are required");
   }
+
+  const name = parseString(body.name, "name", { max: 100 });
+  const email = parseEmail(body.email);
+  const password = parsePassword(body.password, { min: MIN_PASSWORD_LENGTH });
 
   const existing = await findUserByEmail(email);
   if (existing) {
-    return res.status(409).json({ error: "Email already registered" });
+    throw httpError(409, "Email already registered");
   }
 
+  // HASHING PASSWORD HERE
   const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
-  const user = await createUser({ name, email, passwordHash });
 
-  const token = signToken({ userId: user.user_id, email: user.email });
-  res.status(201).json({ user, token });
+  // creating user here
+  let user;
+  try {
+    user = await createUser({ name, email, passwordHash });
+  } catch (err) {
+    if (err.code === "23505") {
+      // postgres error if unique constraint is violated for a column
+      throw httpError(409, "Email already registered");
+    }
+    throw err;
+  }
+
+  // creating token here
+  const token = signToken({
+    userId: user.user_id,
+    email: user.email,
+    role: user.role,
+  });
+  res.status(201).json({
+    user: { user_id: user.user_id, name: user.name, email: user.email },
+    token,
+  });
 }
 
 async function login(req, res) {
-  const { email, password } = req.body;
+  const body = req.body || {};
 
-  if (!email || !password) {
-    return res.status(400).json({ error: "email and password are required" });
+  if (!body.email || !body.password) {
+    throw httpError(400, "email and password are required");
   }
+
+  const email = parseEmail(body.email);
+  const password = parsePassword(body.password, { min: 1 });
 
   const user = await findUserByEmail(email);
-  if (!user) {
-    return res.status(401).json({ error: "Invalid credentials" });
-  }
-
-  const match = await bcrypt.compare(password, user.password_hash);
-  if (!match) {
-    return res.status(401).json({ error: "Invalid credentials" });
+  const match = await bcrypt.compare(
+    password,
+    user ? user.password_hash : DUMMY_HASH,
+  );
+  if (!user || !match) {
+    throw httpError(401, "Invalid credentials");
   }
 
   const token = signToken({
@@ -52,6 +80,7 @@ async function login(req, res) {
     token,
   });
 }
+
 async function getMe(req, res) {
   res.json({ user: req.user });
 }

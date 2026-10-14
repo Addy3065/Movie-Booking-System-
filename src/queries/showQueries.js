@@ -1,4 +1,4 @@
-const pool = require("../../db/db");
+const { pool } = require("../../db/db");
 
 const getAllShows = async (movieId, city) => {
   let query = `
@@ -25,12 +25,12 @@ const getAllShows = async (movieId, city) => {
 
   if (movieId) {
     params.push(movieId);
-    conditions.push(`s.movie_id = $${params.length}`);
+    conditions.push(`s.movie_id = $${params.length}`); // for sql injection protection
   }
 
   if (city) {
     params.push(city);
-    conditions.push(`c.city ILIKE $${params.length}`);
+    conditions.push(`c.city ILIKE $${params.length}`); // for sql injection protection
   }
 
   if (conditions.length > 0) {
@@ -39,7 +39,7 @@ const getAllShows = async (movieId, city) => {
 
   query += " ORDER BY s.show_time";
 
-  const result = await pool.query(query, params);
+  const result = await pool.query(query, params); // params list goes to the value of placeholders
   return result.rows;
 };
 

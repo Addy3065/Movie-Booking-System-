@@ -1,31 +1,36 @@
 const { httpError } = require("../utils/httpError");
+const { parsePositiveInt } = require("../utils/validate");
 
 const LOCK_MINUTES = 5;
 const PAYMENT_WINDOW_MINUTES = 10;
+const MAX_SEATS_PER_REQUEST = 10;
 
 function parseSeatRequest({ showId, showSeatIds, userId }) {
   const uid = Number(userId);
-  const sid = Number(showId);
 
   if (!Number.isInteger(uid) || uid <= 0) {
     throw httpError(401, "Invalid user");
   }
-  if (!Number.isInteger(sid) || sid <= 0) {
-    throw httpError(400, "showId must be a positive integer");
-  }
+  const sid = parsePositiveInt(showId, "showId");
+
   if (!Array.isArray(showSeatIds) || showSeatIds.length === 0) {
     throw httpError(400, "showSeatIds must be a non-empty array");
   }
-
-  const ids = [...new Set(showSeatIds.map(Number))];
-
-  if (!ids.every((n) => Number.isInteger(n) && n > 0)) {
-    throw httpError(400, "showSeatIds must contain only positive integers");
+  if (showSeatIds.length > MAX_SEATS_PER_REQUEST) {
+    throw httpError(
+      400,
+      `showSeatIds cannot contain more than ${MAX_SEATS_PER_REQUEST} seats`,
+    );
   }
+
+  const ids = [
+    ...new Set(
+      showSeatIds.map((v) => parsePositiveInt(v, "each showSeatIds entry")),
+    ),
+  ];
 
   return { uid, sid, ids };
 }
-
 async function releaseStalePendingBookings(client, ids) {
   await client.query(
     `WITH stale AS (
@@ -54,7 +59,7 @@ async function lockSeats(client, request) {
   const { uid, sid, ids } = parseSeatRequest(request);
 
   await releaseStalePendingBookings(client, ids);
-
+  // read
   const { rows } = await client.query(
     `SELECT ss.show_seat_id,
             ss.status,
@@ -89,7 +94,7 @@ async function lockSeats(client, request) {
     err.unavailable = unavailable;
     throw err;
   }
-
+  // write
   const { rows: locked } = await client.query(
     `UPDATE show_seats
      SET status = 'locked',

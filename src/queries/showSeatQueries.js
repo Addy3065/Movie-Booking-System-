@@ -1,4 +1,4 @@
-const pool = require("../../db/db");
+const { pool } = require("../../db/db");
 
 const getSeatMapForShow = async (showId) => {
   const result = await pool.query(

@@ -1,3 +1,5 @@
+// authenticates / verify token for protected routes
+
 const { verifyToken } = require("../utils/jwt");
 
 function requireAuth(req, res, next) {

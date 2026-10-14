@@ -7,6 +7,7 @@ const pool = new Pool({
   host: process.env.DB_HOST,
   port: process.env.DB_PORT,
   database: process.env.DB_NAME,
+  // max : 20 to set pool size to 20 , mine is default i.e. 10
 });
 
 // Fail fast if the pool itself errors (idle client crash, etc.)

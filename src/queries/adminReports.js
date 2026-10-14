@@ -1,20 +1,17 @@
 const { pool } = require("../../db/db");
 const { httpError } = require("../utils/httpError");
+const { parsePositiveInt, parseNonNegativeInt } = require("../utils/validate");
 
 const STATUSES = ["pending", "confirmed", "cancelled"];
 const DATE_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
 
-function parsePositiveInt(value, name) {
-  const n = Number(value);
-  if (!Number.isInteger(n) || n <= 0) {
-    throw httpError(400, `${name} must be a positive integer`);
-  }
-  return n;
-}
-
 function parseDate(value, name) {
   if (typeof value !== "string" || !DATE_FORMAT.test(value)) {
     throw httpError(400, `${name} must look like 2027-01-15`);
+  }
+  const d = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== value) {
+    throw httpError(400, `${name} is not a valid date`);
   }
   return value;
 }
@@ -38,12 +35,18 @@ async function listBookings(query) {
     params.push(parsePositiveInt(query.show_id, "show_id"));
     conditions.push(`sh.show_id = $${params.length}`);
   }
-  if (query.from !== undefined) {
-    params.push(parseDate(query.from, "from"));
+  const from =
+    query.from === undefined ? undefined : parseDate(query.from, "from");
+  const to = query.to === undefined ? undefined : parseDate(query.to, "to");
+  if (from !== undefined && to !== undefined && from > to) {
+    throw httpError(400, "from must not be after to");
+  }
+  if (from !== undefined) {
+    params.push(from);
     conditions.push(`b.booking_time >= $${params.length}::date`);
   }
-  if (query.to !== undefined) {
-    params.push(parseDate(query.to, "to"));
+  if (to !== undefined) {
+    params.push(to);
     conditions.push(
       `b.booking_time < ($${params.length}::date + INTERVAL '1 day')`,
     );
@@ -54,10 +57,10 @@ async function listBookings(query) {
   if (limit > 200) {
     throw httpError(400, "limit cannot exceed 200");
   }
-  const offset = query.offset === undefined ? 0 : Number(query.offset);
-  if (!Number.isInteger(offset) || offset < 0) {
-    throw httpError(400, "offset must be a non-negative integer");
-  }
+  const offset =
+    query.offset === undefined
+      ? 0
+      : parseNonNegativeInt(query.offset, "offset");
   params.push(limit);
   const limitParam = `$${params.length}`;
   params.push(offset);

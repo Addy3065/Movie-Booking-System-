@@ -1,32 +1,19 @@
 const { getAllCinemas, getCinemaById } = require("../queries/cinemaQueries");
+const { httpError } = require("../utils/httpError");
+const { parsePositiveInt } = require("../utils/validate");
 
 const listCinemas = async (req, res) => {
-  try {
-    const cinemas = await getAllCinemas();
-    res.json(cinemas);
-  } catch (err) {
-    console.error(err);
-    res
-      .status(500)
-      .json({ status: "error", message: "Failed to fetch cinemas" });
-  }
+  const cinemas = await getAllCinemas();
+  res.json(cinemas);
 };
 
 const showCinema = async (req, res) => {
-  try {
-    const cinema = await getCinemaById(req.params.id);
-    if (!cinema) {
-      return res
-        .status(404)
-        .json({ status: "error", message: "Cinema not found" });
-    }
-    res.json(cinema);
-  } catch (err) {
-    console.error(err);
-    res
-      .status(500)
-      .json({ status: "error", message: "Failed to fetch cinema" });
+  const id = parsePositiveInt(req.params.id, "id");
+  const cinema = await getCinemaById(id);
+  if (!cinema) {
+    throw httpError(404, "Cinema not found");
   }
+  res.json(cinema);
 };
 
 module.exports = { listCinemas, showCinema };

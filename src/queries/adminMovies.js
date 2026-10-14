@@ -1,30 +1,13 @@
 const { pool } = require("../../db/db");
 const { httpError } = require("../utils/httpError");
+const { parsePositiveInt, parseString } = require("../utils/validate");
 
 function parseMovie({ title, duration_min, language }) {
-  const t = typeof title === "string" ? title.trim() : "";
-  const l = typeof language === "string" ? language.trim() : "";
-  const d = Number(duration_min);
-
-  if (!t || t.length > 200) {
-    throw httpError(400, "title is required (max 200 characters)");
-  }
-  if (!Number.isInteger(d) || d <= 0) {
-    throw httpError(400, "duration_min must be a positive integer");
-  }
-  if (!l || l.length > 50) {
-    throw httpError(400, "language is required (max 50 characters)");
-  }
-
-  return { title: t, duration_min: d, language: l };
-}
-
-function parseMovieId(id) {
-  const n = Number(id);
-  if (!Number.isInteger(n) || n <= 0) {
-    throw httpError(400, "movie id must be a positive integer");
-  }
-  return n;
+  return {
+    title: parseString(title, "title", { max: 200 }),
+    duration_min: parsePositiveInt(duration_min, "duration_min"),
+    language: parseString(language, "language", { max: 50 }),
+  };
 }
 
 async function createMovie(body) {
@@ -39,7 +22,7 @@ async function createMovie(body) {
 }
 
 async function updateMovie(id, body) {
-  const movieId = parseMovieId(id);
+  const movieId = parsePositiveInt(id, "movie id");
   const m = parseMovie(body);
   const { rows } = await pool.query(
     `UPDATE movies
@@ -55,7 +38,7 @@ async function updateMovie(id, body) {
 }
 
 async function deleteMovie(id) {
-  const movieId = parseMovieId(id);
+  const movieId = parsePositiveInt(id, "movie id");
   const { rows } = await pool.query(
     `DELETE FROM movies
      WHERE movie_id = $1

@@ -1,29 +1,25 @@
 const { getAllShows, getShowById } = require("../queries/showQueries");
+const { httpError } = require("../utils/httpError");
+const { parsePositiveInt, parseString } = require("../utils/validate");
 
 const listShows = async (req, res) => {
-  try {
-    const { movie_id, city } = req.query; // GET /api/shows?movie_id=5&city=Amritsar
-    const shows = await getAllShows(movie_id, city);
-    res.json(shows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ status: "error", message: "Failed to fetch shows" });
-  }
+  const { movie_id, city } = req.query;
+  const movieId =
+    movie_id === undefined ? undefined : parsePositiveInt(movie_id, "movie_id");
+  const cityFilter =
+    city === undefined ? undefined : parseString(city, "city", { max: 100 });
+
+  const shows = await getAllShows(movieId, cityFilter);
+  res.json(shows);
 };
 
 const showShow = async (req, res) => {
-  try {
-    const show = await getShowById(req.params.id);
-    if (!show) {
-      return res
-        .status(404)
-        .json({ status: "error", message: "Show not found" });
-    }
-    res.json(show);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ status: "error", message: "Failed to fetch show" });
+  const id = parsePositiveInt(req.params.id, "id");
+  const show = await getShowById(id);
+  if (!show) {
+    throw httpError(404, "Show not found");
   }
+  res.json(show);
 };
 
 module.exports = { listShows, showShow };
