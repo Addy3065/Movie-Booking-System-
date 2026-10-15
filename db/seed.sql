@@ -96,7 +96,7 @@ INSERT INTO movies (title, duration_min, language) VALUES
 ('Dangal', 161, 'Hindi'),             -- tt5074352
 ('RRR', 187, 'Telugu'),               -- tt8178634
 ('Parasite', 132, 'Korean'),          -- tt6751668
-('Spirited Away', 125, 'Japanese');   -- tt0245429
+('Spirited Away', 124, 'Japanese');   -- tt0245429
 
 -- ---------------------------------------------------------
 -- 6. Users (ids: aditya 1, riya 2, karan 3, admin 4)

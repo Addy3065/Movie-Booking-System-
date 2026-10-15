@@ -4,7 +4,7 @@ _Durable knowledge for every agent session: architecture, conventions, decisions
 
 ## Architecture
 - Node/Express API, MySQL 8 via `mysql2/promise` (migrated from Postgres/`pg` on 2026-10-15). Pool in `db/db.js`; transactions via `src/utils/transaction.js` (`withTransaction`, sets READ COMMITTED to match old Postgres semantics).
-- DDL in `db/schema.sql`, demo data in `db/seed.sql` (re-runnable; 10 cinemas, 10 real films with OMDb runtimes/IMDb ids in comments, 5 shows per movie and per cinema dated from CURRENT_DATE+1..3, so reseed when they go stale: `sudo mysql movie_booking < db/seed.sql`). Demo logins listed at top of seed.sql.
+- DDL in `db/schema.sql`, demo data in `db/seed.sql` (re-runnable; 10 cinemas, 10 real films checked against the OMDb API (key `OMDB_API_KEY` in .env; IMDb ids in comments), 5 shows per movie and per cinema dated from CURRENT_DATE+1..3, so reseed when they go stale: `sudo mysql movie_booking < db/seed.sql`). Demo logins listed at top of seed.sql.
 - Frontend: `client/` (Vite + React + react-router, plain CSS in `src/index.css`, no UI lib). Dev server proxies `/api` to :3000 (`API_PROXY` overrides); prod uses `VITE_API_URL`. JWT + user name kept in localStorage (`/auth/me` returns no name). Payments are simulated (`simulate: success|failure`).
 
 - Preview: https://movies.129-154-229-134.sslip.io — Caddy block in /etc/caddy/Caddyfile serves /var/www/movie-booking (copy of client build) and proxies /api/* to systemd `movie-booking.service` (server.js, PORT 4430, root `.env`, MariaDB db `movie_booking`). Redeploy frontend: `cd client && npm run build && sudo rsync -a --delete dist/ /var/www/movie-booking/`; API: `sudo systemctl restart movie-booking`.
