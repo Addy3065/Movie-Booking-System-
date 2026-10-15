@@ -20,7 +20,7 @@ const getAllShows = async (movieId, city) => {
     JOIN cinemas c ON sc.cinema_id = c.cinema_id
   `;
 
-  const conditions = [];
+  const conditions = ["s.show_time > NOW()::timestamp"];
   const params = [];
 
   if (movieId) {
@@ -33,9 +33,7 @@ const getAllShows = async (movieId, city) => {
     conditions.push(`c.city ILIKE $${params.length}`); // for sql injection protection
   }
 
-  if (conditions.length > 0) {
-    query += " WHERE " + conditions.join(" AND ");
-  }
+  query += " WHERE " + conditions.join(" AND ");
 
   query += " ORDER BY s.show_time";
 
@@ -57,7 +55,8 @@ const getShowById = async (showId) => {
       sc.screen_name,
       c.cinema_id,
       c.name AS cinema_name,
-      c.city
+      c.city,
+      (s.show_time <= NOW()::timestamp) AS has_started
     FROM shows s
     JOIN movies m ON s.movie_id = m.movie_id
     JOIN screens sc ON s.screen_id = sc.screen_id

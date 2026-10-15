@@ -4,6 +4,7 @@ const { parsePositiveInt } = require("../utils/validate");
 const LOCK_MINUTES = 5;
 const PAYMENT_WINDOW_MINUTES = 10;
 const MAX_SEATS_PER_REQUEST = 10;
+const BOOKING_CUTOFF_MINUTES = 30;
 
 function parseSeatRequest({ showId, showSeatIds, userId }) {
   const uid = Number(userId);
@@ -31,6 +32,29 @@ function parseSeatRequest({ showId, showSeatIds, userId }) {
 
   return { uid, sid, ids };
 }
+
+async function assertShowBookable(client, showId, cutoffMinutes) {
+  const { rows } = await client.query(
+    `SELECT show_time > NOW()::timestamp AS not_started,
+            show_time > NOW()::timestamp + make_interval(mins => $2::int) AS before_cutoff
+     FROM shows
+     WHERE show_id = $1`,
+    [showId, cutoffMinutes],
+  );
+  if (rows.length === 0) {
+    throw httpError(404, "Show not found");
+  }
+  if (!rows[0].not_started) {
+    throw httpError(409, "Show has already started; booking is closed");
+  }
+  if (!rows[0].before_cutoff) {
+    throw httpError(
+      409,
+      `Booking closes ${cutoffMinutes} minutes before the show starts`,
+    );
+  }
+}
+
 async function releaseStalePendingBookings(client, ids) {
   await client.query(
     `WITH stale AS (
@@ -57,6 +81,8 @@ async function releaseStalePendingBookings(client, ids) {
 
 async function lockSeats(client, request) {
   const { uid, sid, ids } = parseSeatRequest(request);
+
+  await assertShowBookable(client, sid, BOOKING_CUTOFF_MINUTES);
 
   await releaseStalePendingBookings(client, ids);
   // read
@@ -110,6 +136,8 @@ async function lockSeats(client, request) {
 
 async function confirmBooking(client, request) {
   const { uid, sid, ids } = parseSeatRequest(request);
+
+  await assertShowBookable(client, sid, 0);
 
   const { rows } = await client.query(
     `SELECT ss.show_seat_id,
