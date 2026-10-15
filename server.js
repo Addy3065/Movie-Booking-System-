@@ -1,4 +1,5 @@
 const express = require("express");
+const cors = require("cors");
 require("dotenv").config();
 const { pool, checkConnection } = require("./db/db");
 const { startExpirySweeper } = require("./src/utils/expirySweeper");
@@ -14,6 +15,18 @@ const authRoutes = require("./src/routes/auth");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin: allowedOrigins,
+    allowedHeaders: ["Content-Type", "Authorization"],
+  }),
+);
 
 app.use(express.json()); // parsing incoming http requestions with json payload
 

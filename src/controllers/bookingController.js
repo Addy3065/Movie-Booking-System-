@@ -4,6 +4,7 @@ const {
   confirmBooking,
   releaseSeats,
 } = require("../queries/bookings");
+const { listMyBookings } = require("../queries/myBookings");
 
 async function lockSeatsHandler(req, res) {
   const { showId, showSeatIds } = req.body || {};
@@ -44,8 +45,14 @@ async function releaseSeatsHandler(req, res) {
   return res.status(200).json({ message: "Seats released", released });
 }
 
+async function listMyBookingsHandler(req, res) {
+  const bookings = await listMyBookings(req.user.id, req.query);
+  return res.status(200).json({ count: bookings.length, bookings });
+}
+
 module.exports = {
   lockSeatsHandler,
   confirmBookingHandler,
   releaseSeatsHandler,
+  listMyBookingsHandler,
 };
