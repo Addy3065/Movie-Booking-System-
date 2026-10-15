@@ -5,6 +5,7 @@ _Durable knowledge for every agent session: architecture, conventions, decisions
 ## Architecture
 - Node/Express API, MySQL 8 via `mysql2/promise` (migrated from Postgres/`pg` on 2026-10-15). Pool in `db/db.js`; transactions via `src/utils/transaction.js` (`withTransaction`, sets READ COMMITTED to match old Postgres semantics).
 - DDL in `db/schema.sql`, demo data in `db/seed.sql` (re-runnable).
+- Frontend: `client/` (Vite + React + react-router, plain CSS in `src/index.css`, no UI lib). Dev server proxies `/api` to :3000 (`API_PROXY` overrides); prod uses `VITE_API_URL`. JWT + user name kept in localStorage (`/auth/me` returns no name). Payments are simulated (`simulate: success|failure`).
 
 ## Conventions
 - Queries use `?` placeholders with `pool.query`/`client.query` (not `execute`) so arrays expand for `IN (?)` and bulk `VALUES ?`. Results: `const [rows] = await ...`; writes use `result.insertId` / `affectedRows` (MySQL has no RETURNING).
@@ -17,4 +18,5 @@ _Durable knowledge for every agent session: architecture, conventions, decisions
 - SQL targets real MySQL 8 (uses `FOR SHARE`, `SKIP LOCKED`); the server's local `mysql` on :3306 is MariaDB 11.8, which rejects `FOR SHARE`.
 - `FOR UPDATE` locks every joined table in MySQL (no `OF tbl`), so locking reads select from `show_seats` alone.
 - Lock timestamps are `DATETIME(3)`; compare against `NOW(3)`.
+- Port 3000 on this host is taken by another project; test the API on a spare port (e.g. 3101).
 - Other projects' Node servers run on this host (`workspace/api`, `workspace/cron`); never `pkill -f "node server.js"`.
