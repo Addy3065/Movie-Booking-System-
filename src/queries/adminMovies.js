@@ -12,11 +12,14 @@ function parseMovie({ title, duration_min, language }) {
 
 async function createMovie(body) {
   const m = parseMovie(body);
-  const { rows } = await pool.query(
+  const [result] = await pool.query(
     `INSERT INTO movies (title, duration_min, language)
-     VALUES ($1, $2, $3)
-     RETURNING movie_id, title, duration_min, language`,
+     VALUES (?, ?, ?)`,
     [m.title, m.duration_min, m.language],
+  );
+  const [rows] = await pool.query(
+    "SELECT movie_id, title, duration_min, language FROM movies WHERE movie_id = ?",
+    [result.insertId],
   );
   return rows[0];
 }
@@ -24,12 +27,15 @@ async function createMovie(body) {
 async function updateMovie(id, body) {
   const movieId = parsePositiveInt(id, "movie id");
   const m = parseMovie(body);
-  const { rows } = await pool.query(
+  await pool.query(
     `UPDATE movies
-     SET title = $2, duration_min = $3, language = $4
-     WHERE movie_id = $1
-     RETURNING movie_id, title, duration_min, language`,
-    [movieId, m.title, m.duration_min, m.language],
+     SET title = ?, duration_min = ?, language = ?
+     WHERE movie_id = ?`,
+    [m.title, m.duration_min, m.language, movieId],
+  );
+  const [rows] = await pool.query(
+    "SELECT movie_id, title, duration_min, language FROM movies WHERE movie_id = ?",
+    [movieId],
   );
   if (rows.length === 0) {
     throw httpError(404, "Movie not found");
@@ -39,19 +45,18 @@ async function updateMovie(id, body) {
 
 async function deleteMovie(id) {
   const movieId = parsePositiveInt(id, "movie id");
-  const { rows } = await pool.query(
+  const [result] = await pool.query(
     `DELETE FROM movies
-     WHERE movie_id = $1
-       AND NOT EXISTS (SELECT 1 FROM shows WHERE shows.movie_id = $1)
-     RETURNING movie_id`,
-    [movieId],
+     WHERE movie_id = ?
+       AND NOT EXISTS (SELECT 1 FROM shows WHERE shows.movie_id = ?)`,
+    [movieId, movieId],
   );
-  if (rows.length > 0) {
-    return rows[0].movie_id;
+  if (result.affectedRows > 0) {
+    return movieId;
   }
 
-  const { rows: exists } = await pool.query(
-    "SELECT 1 FROM movies WHERE movie_id = $1",
+  const [exists] = await pool.query(
+    "SELECT 1 FROM movies WHERE movie_id = ?",
     [movieId],
   );
   if (exists.length === 0) {

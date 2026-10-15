@@ -32,12 +32,12 @@ async function api(method, path, token, body) {
 }
 
 async function pickSeats(count) {
-  const { rows } = await pool.query(
+  const [rows] = await pool.query(
     `SELECT show_seat_id
      FROM show_seats
-     WHERE show_id = $1 AND status = 'available'
+     WHERE show_id = ? AND status = 'available'
      ORDER BY show_seat_id
-     LIMIT $2`,
+     LIMIT ?`,
     [SHOW_ID, count],
   );
   if (rows.length < count) {
@@ -70,27 +70,27 @@ async function createPendingBooking(token, seatId) {
 }
 
 async function snapshot(bookingId, seatId) {
-  const booking = await pool.query(
-    "SELECT status FROM bookings WHERE booking_id = $1",
+  const [booking] = await pool.query(
+    "SELECT status FROM bookings WHERE booking_id = ?",
     [bookingId],
   );
-  const bookingSeats = await pool.query(
-    "SELECT COUNT(*)::int AS n FROM booking_seats WHERE booking_id = $1",
+  const [bookingSeats] = await pool.query(
+    "SELECT COUNT(*) AS n FROM booking_seats WHERE booking_id = ?",
     [bookingId],
   );
-  const payments = await pool.query(
-    "SELECT status FROM payments WHERE booking_id = $1",
+  const [payments] = await pool.query(
+    "SELECT status FROM payments WHERE booking_id = ?",
     [bookingId],
   );
-  const seat = await pool.query(
-    "SELECT status, locked_by FROM show_seats WHERE show_seat_id = $1",
+  const [seat] = await pool.query(
+    "SELECT status, locked_by FROM show_seats WHERE show_seat_id = ?",
     [seatId],
   );
   return {
-    bookingStatus: booking.rows[0].status,
-    bookingSeatCount: bookingSeats.rows[0].n,
-    payments: payments.rows,
-    seat: seat.rows[0],
+    bookingStatus: booking[0].status,
+    bookingSeatCount: bookingSeats[0].n,
+    payments,
+    seat: seat[0],
   };
 }
 
@@ -152,8 +152,8 @@ async function staleRaceTest() {
 
     await pool.query(
       `UPDATE show_seats
-       SET locked_until = NOW() + interval '1500 milliseconds'
-       WHERE show_seat_id = $1`,
+       SET locked_until = NOW(3) + INTERVAL 1500000 MICROSECOND
+       WHERE show_seat_id = ?`,
       [seatId],
     );
 
@@ -207,14 +207,13 @@ async function staleRaceTest() {
 
 async function cleanup() {
   if (created.bookingIds.length > 0) {
-    await pool.query("DELETE FROM payments WHERE booking_id = ANY($1::int[])", [
+    await pool.query("DELETE FROM payments WHERE booking_id IN (?)", [
       created.bookingIds,
     ]);
-    await pool.query(
-      "DELETE FROM booking_seats WHERE booking_id = ANY($1::int[])",
-      [created.bookingIds],
-    );
-    await pool.query("DELETE FROM bookings WHERE booking_id = ANY($1::int[])", [
+    await pool.query("DELETE FROM booking_seats WHERE booking_id IN (?)", [
+      created.bookingIds,
+    ]);
+    await pool.query("DELETE FROM bookings WHERE booking_id IN (?)", [
       created.bookingIds,
     ]);
   }
@@ -222,7 +221,7 @@ async function cleanup() {
     await pool.query(
       `UPDATE show_seats
        SET status = 'available', locked_by = NULL, locked_until = NULL
-       WHERE show_seat_id = ANY($1::int[])`,
+       WHERE show_seat_id IN (?)`,
       [created.seatIds],
     );
   }

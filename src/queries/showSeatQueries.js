@@ -1,7 +1,7 @@
 const { pool } = require("../../db/db");
 
 const getSeatMapForShow = async (showId) => {
-  const result = await pool.query(
+  const [rows] = await pool.query(
     `
     SELECT
       ss.show_seat_id,
@@ -17,12 +17,12 @@ const getSeatMapForShow = async (showId) => {
     JOIN seats se ON ss.seat_id = se.seat_id
     JOIN seat_types st ON se.seat_type_id = st.seat_type_id
     JOIN shows sh ON ss.show_id = sh.show_id
-    WHERE ss.show_id = $1
+    WHERE ss.show_id = ?
     ORDER BY se.seat_number
     `,
     [showId],
   );
-  return result.rows;
+  return rows;
 };
 
 module.exports = { getSeatMapForShow };

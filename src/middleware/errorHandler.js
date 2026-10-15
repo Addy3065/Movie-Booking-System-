@@ -1,11 +1,11 @@
-const PG_ERRORS = {
-  22001: [400, "A value is too long"],
-  22003: [400, "A numeric value is out of range"],
-  22007: [400, "Invalid date or time value"],
-  22008: [400, "Invalid date or time value"],
-  "22P02": [400, "Invalid input value"],
-  23503: [409, "Record is referenced by other records"],
-  23505: [409, "Record already exists"],
+const DB_ERRORS = {
+  ER_DATA_TOO_LONG: [400, "A value is too long"],
+  ER_WARN_DATA_OUT_OF_RANGE: [400, "A numeric value is out of range"],
+  ER_TRUNCATED_WRONG_VALUE: [400, "Invalid date or time value"],
+  ER_TRUNCATED_WRONG_VALUE_FOR_FIELD: [400, "Invalid input value"],
+  ER_ROW_IS_REFERENCED_2: [409, "Record is referenced by other records"],
+  ER_NO_REFERENCED_ROW_2: [409, "Record is referenced by other records"],
+  ER_DUP_ENTRY: [409, "Record already exists"],
 };
 
 const EXTRA_FIELDS = ["unavailable", "conflictingShows"];
@@ -31,9 +31,9 @@ function errorHandler(err, req, res, next) {
     return res.status(err.status).json(body);
   }
 
-  const pg = typeof err.code === "string" ? PG_ERRORS[err.code] : undefined;
-  if (pg) {
-    return res.status(pg[0]).json({ error: pg[1] });
+  const dbError = typeof err.code === "string" ? DB_ERRORS[err.code] : undefined;
+  if (dbError) {
+    return res.status(dbError[0]).json({ error: dbError[1] });
   }
 
   console.error(err);

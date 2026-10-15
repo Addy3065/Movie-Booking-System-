@@ -32,8 +32,8 @@ async function register(req, res) {
   try {
     user = await createUser({ name, email, passwordHash });
   } catch (err) {
-    if (err.code === "23505") {
-      // postgres error if unique constraint is violated for a column
+    if (err.code === "ER_DUP_ENTRY") {
+      // mysql error if unique constraint is violated for a column
       throw httpError(409, "Email already registered");
     }
     throw err;

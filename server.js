@@ -33,11 +33,11 @@ app.use(express.json()); // parsing incoming http requestions with json payload
 // Temporary health-check route to confirm server + DB are alive
 app.get("/health", async (req, res) => {
   try {
-    const result = await pool.query("SELECT NOW()");
+    const [rows] = await pool.query("SELECT NOW() AS now");
     res.json({
       status: "ok",
       server: "running",
-      db_time: result.rows[0].now,
+      db_time: rows[0].now,
     });
   } catch (err) {
     console.error(err);

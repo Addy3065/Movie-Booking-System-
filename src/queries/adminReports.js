@@ -16,6 +16,11 @@ function parseDate(value, name) {
   return value;
 }
 
+// GROUP_CONCAT gives "A1,A2" (or NULL); the API returns seats as an array
+function withSeatArray(row) {
+  return { ...row, seats: row.seats ? row.seats.split(",") : [] };
+}
+
 async function listBookings(query) {
   const conditions = [];
   const params = [];
@@ -25,15 +30,15 @@ async function listBookings(query) {
       throw httpError(400, "status must be pending, confirmed or cancelled");
     }
     params.push(query.status);
-    conditions.push(`b.status = $${params.length}`);
+    conditions.push("b.status = ?");
   }
   if (query.user_id !== undefined) {
     params.push(parsePositiveInt(query.user_id, "user_id"));
-    conditions.push(`b.user_id = $${params.length}`);
+    conditions.push("b.user_id = ?");
   }
   if (query.show_id !== undefined) {
     params.push(parsePositiveInt(query.show_id, "show_id"));
-    conditions.push(`sh.show_id = $${params.length}`);
+    conditions.push("sh.show_id = ?");
   }
   const from =
     query.from === undefined ? undefined : parseDate(query.from, "from");
@@ -43,13 +48,11 @@ async function listBookings(query) {
   }
   if (from !== undefined) {
     params.push(from);
-    conditions.push(`b.booking_time >= $${params.length}::date`);
+    conditions.push("b.booking_time >= CAST(? AS DATE)");
   }
   if (to !== undefined) {
     params.push(to);
-    conditions.push(
-      `b.booking_time < ($${params.length}::date + INTERVAL '1 day')`,
-    );
+    conditions.push("b.booking_time < CAST(? AS DATE) + INTERVAL 1 DAY");
   }
 
   const limit =
@@ -61,15 +64,12 @@ async function listBookings(query) {
     query.offset === undefined
       ? 0
       : parseNonNegativeInt(query.offset, "offset");
-  params.push(limit);
-  const limitParam = `$${params.length}`;
-  params.push(offset);
-  const offsetParam = `$${params.length}`;
+  params.push(limit, offset);
 
   const where =
     conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
 
-  const { rows } = await pool.query(
+  const [rows] = await pool.query(
     `SELECT b.booking_id,
             b.booking_time,
             b.status,
@@ -82,12 +82,14 @@ async function listBookings(query) {
             m.title AS movie_title,
             c.name AS cinema_name,
             sc.screen_name,
-            COALESCE(
-              ARRAY_AGG(se.seat_number ORDER BY se.seat_number)
-                FILTER (WHERE se.seat_number IS NOT NULL),
-              '{}'
-            ) AS seats,
-            p.status AS payment_status
+            GROUP_CONCAT(se.seat_number ORDER BY se.seat_number) AS seats,
+            (
+              SELECT p.status
+              FROM payments p
+              WHERE p.booking_id = b.booking_id
+              ORDER BY p.payment_id DESC
+              LIMIT 1
+            ) AS payment_status
      FROM bookings b
      JOIN users u ON u.user_id = b.user_id
      LEFT JOIN booking_seats bs ON bs.booking_id = b.booking_id
@@ -97,26 +99,19 @@ async function listBookings(query) {
      LEFT JOIN movies m ON m.movie_id = sh.movie_id
      LEFT JOIN screens sc ON sc.screen_id = sh.screen_id
      LEFT JOIN cinemas c ON c.cinema_id = sc.cinema_id
-     LEFT JOIN LATERAL (
-       SELECT status
-       FROM payments
-       WHERE booking_id = b.booking_id
-       ORDER BY payment_id DESC
-       LIMIT 1
-     ) p ON TRUE
      ${where}
      GROUP BY b.booking_id, u.user_id, sh.show_id, m.movie_id,
-              c.cinema_id, sc.screen_id, p.status
+              c.cinema_id, sc.screen_id
      ORDER BY b.booking_time DESC, b.booking_id DESC
-     LIMIT ${limitParam} OFFSET ${offsetParam}`,
+     LIMIT ? OFFSET ?`,
     params,
   );
 
-  return rows;
+  return rows.map(withSeatArray);
 }
 
 async function revenueByMovie() {
-  const { rows } = await pool.query(
+  const [rows] = await pool.query(
     `WITH booking_show AS (
        SELECT DISTINCT bs.booking_id, ss.show_id
        FROM booking_seats bs
@@ -124,7 +119,7 @@ async function revenueByMovie() {
      )
      SELECT m.movie_id,
             m.title,
-            COUNT(DISTINCT p.booking_id)::int AS paid_bookings,
+            COUNT(DISTINCT p.booking_id) AS paid_bookings,
             COALESCE(SUM(p.amount), 0) AS revenue
      FROM movies m
      LEFT JOIN shows sh ON sh.movie_id = m.movie_id
@@ -143,27 +138,27 @@ async function showOccupancy(query) {
 
   if (query.movie_id !== undefined) {
     params.push(parsePositiveInt(query.movie_id, "movie_id"));
-    where = `WHERE sh.movie_id = $1`;
+    where = "WHERE sh.movie_id = ?";
   }
 
-  const { rows } = await pool.query(
+  const [rows] = await pool.query(
     `SELECT sh.show_id,
             m.title AS movie_title,
             c.name AS cinema_name,
             sc.screen_name,
             sh.show_time,
-            COUNT(ss.show_seat_id)::int AS total_seats,
-            COUNT(*) FILTER (WHERE ss.status = 'booked')::int AS booked_seats,
-            COUNT(*) FILTER (
-              WHERE ss.status = 'locked' AND ss.locked_until > NOW()
-            )::int AS held_seats,
+            COUNT(ss.show_seat_id) AS total_seats,
+            COUNT(CASE WHEN ss.status = 'booked' THEN 1 END) AS booked_seats,
+            COUNT(
+              CASE WHEN ss.status = 'locked' AND ss.locked_until > NOW(3) THEN 1 END
+            ) AS held_seats,
             ROUND(
-              100.0 * COUNT(*) FILTER (WHERE ss.status = 'booked')
+              100.0 * COUNT(CASE WHEN ss.status = 'booked' THEN 1 END)
               / NULLIF(COUNT(ss.show_seat_id), 0),
               1
             ) AS occupancy_pct,
             COALESCE(
-              SUM(bs.price) FILTER (WHERE ss.status = 'booked'),
+              SUM(CASE WHEN ss.status = 'booked' THEN bs.price END),
               0
             ) AS seat_revenue
      FROM shows sh

@@ -20,29 +20,29 @@ const getAllShows = async (movieId, city) => {
     JOIN cinemas c ON sc.cinema_id = c.cinema_id
   `;
 
-  const conditions = ["s.show_time > NOW()::timestamp"];
+  const conditions = ["s.show_time > NOW()"];
   const params = [];
 
   if (movieId) {
     params.push(movieId);
-    conditions.push(`s.movie_id = $${params.length}`); // for sql injection protection
+    conditions.push("s.movie_id = ?"); // for sql injection protection
   }
 
   if (city) {
     params.push(city);
-    conditions.push(`c.city ILIKE $${params.length}`); // for sql injection protection
+    conditions.push("c.city LIKE ?"); // for sql injection protection
   }
 
   query += " WHERE " + conditions.join(" AND ");
 
   query += " ORDER BY s.show_time";
 
-  const result = await pool.query(query, params); // params list goes to the value of placeholders
-  return result.rows;
+  const [rows] = await pool.query(query, params); // params list goes to the value of placeholders
+  return rows;
 };
 
 const getShowById = async (showId) => {
-  const result = await pool.query(
+  const [rows] = await pool.query(
     `
     SELECT
       s.show_id,
@@ -56,16 +56,17 @@ const getShowById = async (showId) => {
       c.cinema_id,
       c.name AS cinema_name,
       c.city,
-      (s.show_time <= NOW()::timestamp) AS has_started
+      (s.show_time <= NOW()) AS has_started
     FROM shows s
     JOIN movies m ON s.movie_id = m.movie_id
     JOIN screens sc ON s.screen_id = sc.screen_id
     JOIN cinemas c ON sc.cinema_id = c.cinema_id
-    WHERE s.show_id = $1
+    WHERE s.show_id = ?
     `,
     [showId],
   );
-  return result.rows[0];
+  if (!rows[0]) return undefined;
+  return { ...rows[0], has_started: Boolean(rows[0].has_started) };
 };
 
 module.exports = { getAllShows, getShowById };

@@ -1,26 +1,20 @@
-const { Pool } = require("pg");
+const mysql = require("mysql2/promise");
 require("dotenv").config(); // to acces data from .env file without actually showing our sensitive INFO
 
-const pool = new Pool({
+const pool = mysql.createPool({
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   host: process.env.DB_HOST,
   port: process.env.DB_PORT,
   database: process.env.DB_NAME,
-  // max : 20 to set pool size to 20 , mine is default i.e. 10
-});
-
-// Fail fast if the pool itself errors (idle client crash, etc.)
-pool.on("error", (err) => {
-  console.error("Unexpected error on idle client", err);
-  process.exit(-1);
+  connectionLimit: 10, // pool size
 });
 
 // Quick sanity check on startup — confirms credentials + DB are reachable
 // A promise server.js can await before starting
 async function checkConnection() {
-  const res = await pool.query("SELECT NOW()");
-  console.log("✅ Database connected at", res.rows[0].now);
+  const [rows] = await pool.query("SELECT NOW() AS now");
+  console.log("✅ Database connected at", rows[0].now);
 }
 
 module.exports = { pool, checkConnection };

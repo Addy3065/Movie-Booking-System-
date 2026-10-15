@@ -34,12 +34,12 @@ function parseSeatRequest({ showId, showSeatIds, userId }) {
 }
 
 async function assertShowBookable(client, showId, cutoffMinutes) {
-  const { rows } = await client.query(
-    `SELECT show_time > NOW()::timestamp AS not_started,
-            show_time > NOW()::timestamp + make_interval(mins => $2::int) AS before_cutoff
+  const [rows] = await client.query(
+    `SELECT show_time > NOW() AS not_started,
+            show_time > NOW() + INTERVAL ? MINUTE AS before_cutoff
      FROM shows
-     WHERE show_id = $1`,
-    [showId, cutoffMinutes],
+     WHERE show_id = ?`,
+    [cutoffMinutes, showId],
   );
   if (rows.length === 0) {
     throw httpError(404, "Show not found");
@@ -56,27 +56,37 @@ async function assertShowBookable(client, showId, cutoffMinutes) {
 }
 
 async function releaseStalePendingBookings(client, ids) {
-  await client.query(
-    `WITH stale AS (
-       SELECT DISTINCT b.booking_id
-       FROM bookings b
-       JOIN booking_seats bs ON bs.booking_id = b.booking_id
-       JOIN show_seats ss ON ss.show_seat_id = bs.show_seat_id
-       WHERE b.status = 'pending'
-         AND bs.show_seat_id = ANY($1::int[])
-         AND (ss.locked_until IS NULL OR ss.locked_until <= NOW())
-     ),
-     cancelled AS (
-       UPDATE bookings
-       SET status = 'cancelled'
-       WHERE booking_id IN (SELECT booking_id FROM stale)
-         AND status = 'pending'
-       RETURNING booking_id
-     )
-     DELETE FROM booking_seats
-     WHERE booking_id IN (SELECT booking_id FROM cancelled)`,
+  const [stale] = await client.query(
+    `SELECT DISTINCT b.booking_id
+     FROM bookings b
+     JOIN booking_seats bs ON bs.booking_id = b.booking_id
+     JOIN show_seats ss ON ss.show_seat_id = bs.show_seat_id
+     WHERE b.status = 'pending'
+       AND bs.show_seat_id IN (?)
+       AND (ss.locked_until IS NULL OR ss.locked_until <= NOW(3))`,
     [ids],
   );
+  if (stale.length === 0) return;
+
+  // lock + re-check status so a booking paid meanwhile is left alone
+  const [cancelled] = await client.query(
+    `SELECT booking_id
+     FROM bookings
+     WHERE booking_id IN (?) AND status = 'pending'
+     ORDER BY booking_id
+     FOR UPDATE`,
+    [stale.map((r) => r.booking_id)],
+  );
+  if (cancelled.length === 0) return;
+
+  const cancelledIds = cancelled.map((r) => r.booking_id);
+  await client.query(
+    "UPDATE bookings SET status = 'cancelled' WHERE booking_id IN (?)",
+    [cancelledIds],
+  );
+  await client.query("DELETE FROM booking_seats WHERE booking_id IN (?)", [
+    cancelledIds,
+  ]);
 }
 
 async function lockSeats(client, request) {
@@ -86,19 +96,19 @@ async function lockSeats(client, request) {
 
   await releaseStalePendingBookings(client, ids);
   // read
-  const { rows } = await client.query(
+  const [rows] = await client.query(
     `SELECT ss.show_seat_id,
             ss.status,
             ss.locked_by,
-            (ss.locked_until IS NOT NULL AND ss.locked_until > NOW()) AS lock_active,
+            (ss.locked_until IS NOT NULL AND ss.locked_until > NOW(3)) AS lock_active,
             EXISTS (
               SELECT 1 FROM booking_seats bs
               WHERE bs.show_seat_id = ss.show_seat_id
             ) AS has_booking
      FROM show_seats ss
-     WHERE ss.show_id = $1 AND ss.show_seat_id = ANY($2::int[])
+     WHERE ss.show_id = ? AND ss.show_seat_id IN (?)
      ORDER BY ss.show_seat_id
-     FOR UPDATE OF ss`,
+     FOR UPDATE`,
     [sid, ids],
   );
 
@@ -121,14 +131,20 @@ async function lockSeats(client, request) {
     throw err;
   }
   // write
-  const { rows: locked } = await client.query(
+  await client.query(
     `UPDATE show_seats
      SET status = 'locked',
-         locked_by = $2,
-         locked_until = NOW() + make_interval(mins => $3::int)
-     WHERE show_seat_id = ANY($1::int[])
-     RETURNING show_seat_id, locked_until`,
-    [ids, uid, LOCK_MINUTES],
+         locked_by = ?,
+         locked_until = NOW(3) + INTERVAL ? MINUTE
+     WHERE show_seat_id IN (?)`,
+    [uid, LOCK_MINUTES, ids],
+  );
+  const [locked] = await client.query(
+    `SELECT show_seat_id, locked_until
+     FROM show_seats
+     WHERE show_seat_id IN (?)
+     ORDER BY show_seat_id`,
+    [ids],
   );
 
   return locked;
@@ -139,11 +155,19 @@ async function confirmBooking(client, request) {
 
   await assertShowBookable(client, sid, 0);
 
-  const { rows } = await client.query(
+  // lock only the show_seats rows; FOR UPDATE would also lock every joined table
+  await client.query(
+    `SELECT show_seat_id FROM show_seats
+     WHERE show_id = ? AND show_seat_id IN (?)
+     ORDER BY show_seat_id
+     FOR UPDATE`,
+    [sid, ids],
+  );
+  const [rows] = await client.query(
     `SELECT ss.show_seat_id,
             ss.status,
             ss.locked_by,
-            (ss.locked_until IS NOT NULL AND ss.locked_until > NOW()) AS lock_active,
+            (ss.locked_until IS NOT NULL AND ss.locked_until > NOW(3)) AS lock_active,
             ROUND(sh.base_price * st.price_multiplier, 2) AS price,
             EXISTS (
               SELECT 1 FROM booking_seats bs
@@ -153,9 +177,8 @@ async function confirmBooking(client, request) {
      JOIN shows sh ON sh.show_id = ss.show_id
      JOIN seats s ON s.seat_id = ss.seat_id
      JOIN seat_types st ON st.seat_type_id = s.seat_type_id
-     WHERE ss.show_id = $1 AND ss.show_seat_id = ANY($2::int[])
-     ORDER BY ss.show_seat_id
-     FOR UPDATE OF ss`,
+     WHERE ss.show_id = ? AND ss.show_seat_id IN (?)
+     ORDER BY ss.show_seat_id`,
     [sid, ids],
   );
 
@@ -185,31 +208,32 @@ async function confirmBooking(client, request) {
   );
   const total = (totalPaise / 100).toFixed(2);
 
-  const { rows: bookingRows } = await client.query(
+  const [inserted] = await client.query(
     `INSERT INTO bookings (user_id, status, total_amount)
-     VALUES ($1, 'pending', $2)
-     RETURNING booking_id, booking_time, status, total_amount`,
+     VALUES (?, 'pending', ?)`,
     [uid, total],
+  );
+  const [bookingRows] = await client.query(
+    `SELECT booking_id, booking_time, status, total_amount
+     FROM bookings WHERE booking_id = ?`,
+    [inserted.insertId],
   );
   const booking = bookingRows[0];
 
   await client.query(
-    `INSERT INTO booking_seats (booking_id, show_seat_id, price)
-     SELECT $1, x.id, x.price
-     FROM unnest($2::int[], $3::numeric[]) AS x(id, price)`,
-    [
-      booking.booking_id,
-      rows.map((r) => r.show_seat_id),
-      rows.map((r) => r.price),
-    ],
+    `INSERT INTO booking_seats (booking_id, show_seat_id, price) VALUES ?`,
+    [rows.map((r) => [booking.booking_id, r.show_seat_id, r.price])],
   );
 
-  const { rows: extended } = await client.query(
+  await client.query(
     `UPDATE show_seats
-     SET locked_until = NOW() + make_interval(mins => $2::int)
-     WHERE show_seat_id = ANY($1::int[])
-     RETURNING locked_until`,
-    [ids, PAYMENT_WINDOW_MINUTES],
+     SET locked_until = NOW(3) + INTERVAL ? MINUTE
+     WHERE show_seat_id IN (?)`,
+    [PAYMENT_WINDOW_MINUTES, ids],
+  );
+  const [extended] = await client.query(
+    "SELECT locked_until FROM show_seats WHERE show_seat_id IN (?) LIMIT 1",
+    [ids],
   );
 
   return {
@@ -222,29 +246,32 @@ async function confirmBooking(client, request) {
 async function releaseSeats(client, request) {
   const { uid, sid, ids } = parseSeatRequest(request);
 
-  const { rows } = await client.query(
-    `WITH target AS (
-       SELECT ss.show_seat_id
-       FROM show_seats ss
-       WHERE ss.show_id = $1
-         AND ss.show_seat_id = ANY($2::int[])
-         AND ss.status = 'locked'
-         AND ss.locked_by = $3
-         AND NOT EXISTS (
-           SELECT 1 FROM booking_seats bs
-           WHERE bs.show_seat_id = ss.show_seat_id
-         )
-       ORDER BY ss.show_seat_id
-       FOR UPDATE OF ss
-     )
-     UPDATE show_seats
-     SET status = 'available', locked_by = NULL, locked_until = NULL
-     WHERE show_seat_id IN (SELECT show_seat_id FROM target)
-     RETURNING show_seat_id`,
+  const [rows] = await client.query(
+    `SELECT ss.show_seat_id
+     FROM show_seats ss
+     WHERE ss.show_id = ?
+       AND ss.show_seat_id IN (?)
+       AND ss.status = 'locked'
+       AND ss.locked_by = ?
+       AND NOT EXISTS (
+         SELECT 1 FROM booking_seats bs
+         WHERE bs.show_seat_id = ss.show_seat_id
+       )
+     ORDER BY ss.show_seat_id
+     FOR UPDATE`,
     [sid, ids, uid],
   );
+  const released = rows.map((r) => r.show_seat_id);
+  if (released.length === 0) return released;
 
-  return rows.map((r) => r.show_seat_id);
+  await client.query(
+    `UPDATE show_seats
+     SET status = 'available', locked_by = NULL, locked_until = NULL
+     WHERE show_seat_id IN (?)`,
+    [released],
+  );
+
+  return released;
 }
 
 module.exports = { lockSeats, confirmBooking, releaseSeats };

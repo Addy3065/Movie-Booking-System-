@@ -2,6 +2,11 @@ const { pool } = require("../../db/db");
 const { httpError } = require("../utils/httpError");
 const { parsePositiveInt, parseNonNegativeInt } = require("../utils/validate");
 
+// GROUP_CONCAT gives "A1,A2" (or NULL); the API returns seats as an array
+function withSeatArray(row) {
+  return { ...row, seats: row.seats ? row.seats.split(",") : [] };
+}
+
 async function listMyBookings(userId, query) {
   const uid = Number(userId);
   if (!Number.isInteger(uid) || uid <= 0) {
@@ -18,7 +23,7 @@ async function listMyBookings(userId, query) {
       ? 0
       : parseNonNegativeInt(query.offset, "offset");
 
-  const { rows } = await pool.query(
+  const [rows] = await pool.query(
     `SELECT b.booking_id,
             b.booking_time,
             b.status,
@@ -29,13 +34,15 @@ async function listMyBookings(userId, query) {
             c.name AS cinema_name,
             c.city,
             sc.screen_name,
-            COALESCE(
-              ARRAY_AGG(se.seat_number ORDER BY se.seat_number)
-                FILTER (WHERE se.seat_number IS NOT NULL),
-              '{}'
-            ) AS seats,
-            MIN(ss.locked_until) FILTER (WHERE b.status = 'pending') AS pay_by,
-            p.status AS payment_status
+            GROUP_CONCAT(se.seat_number ORDER BY se.seat_number) AS seats,
+            MIN(CASE WHEN b.status = 'pending' THEN ss.locked_until END) AS pay_by,
+            (
+              SELECT p.status
+              FROM payments p
+              WHERE p.booking_id = b.booking_id
+              ORDER BY p.payment_id DESC
+              LIMIT 1
+            ) AS payment_status
      FROM bookings b
      LEFT JOIN booking_seats bs ON bs.booking_id = b.booking_id
      LEFT JOIN show_seats ss ON ss.show_seat_id = bs.show_seat_id
@@ -44,22 +51,15 @@ async function listMyBookings(userId, query) {
      LEFT JOIN movies m ON m.movie_id = sh.movie_id
      LEFT JOIN screens sc ON sc.screen_id = sh.screen_id
      LEFT JOIN cinemas c ON c.cinema_id = sc.cinema_id
-     LEFT JOIN LATERAL (
-       SELECT status
-       FROM payments
-       WHERE booking_id = b.booking_id
-       ORDER BY payment_id DESC
-       LIMIT 1
-     ) p ON TRUE
-     WHERE b.user_id = $1
+     WHERE b.user_id = ?
      GROUP BY b.booking_id, sh.show_id, m.movie_id,
-              c.cinema_id, sc.screen_id, p.status
+              c.cinema_id, sc.screen_id
      ORDER BY b.booking_time DESC, b.booking_id DESC
-     LIMIT $2 OFFSET $3`,
+     LIMIT ? OFFSET ?`,
     [uid, limit, offset],
   );
 
-  return rows;
+  return rows.map(withSeatArray);
 }
 
 module.exports = { listMyBookings };

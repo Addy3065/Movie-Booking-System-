@@ -5,13 +5,22 @@
 -- shows, per-show seat generation, and all 3 booking lifecycle
 -- states -> confirmed+paid, pending+locked (in-progress checkout),
 -- cancelled+refunded.
--- Safe to re-run: resets all tables and serial counters first.
+-- Safe to re-run: resets all tables and AUTO_INCREMENT counters first.
 -- =========================================================
 
-TRUNCATE TABLE
-    payments, booking_seats, bookings, show_seats, shows,
-    seats, movies, users, seat_types, screens, cinemas
-RESTART IDENTITY CASCADE;
+SET FOREIGN_KEY_CHECKS = 0;
+TRUNCATE TABLE payments;
+TRUNCATE TABLE booking_seats;
+TRUNCATE TABLE bookings;
+TRUNCATE TABLE show_seats;
+TRUNCATE TABLE shows;
+TRUNCATE TABLE seats;
+TRUNCATE TABLE movies;
+TRUNCATE TABLE users;
+TRUNCATE TABLE seat_types;
+TRUNCATE TABLE screens;
+TRUNCATE TABLE cinemas;
+SET FOREIGN_KEY_CHECKS = 1;
 
 -- ---------------------------------------------------------
 -- 1. Cinemas
@@ -49,11 +58,15 @@ INSERT INTO seat_types (type_name, price_multiplier) VALUES
 INSERT INTO seats (screen_id, seat_number, seat_type_id)
 SELECT s.screen_id, layout.seat_number, st.seat_type_id
 FROM screens s
-CROSS JOIN (VALUES
-    ('A1','Regular'), ('A2','Regular'), ('A3','Regular'), ('A4','Regular'),
-    ('B1','Premium'), ('B2','Premium'), ('B3','Premium'), ('B4','Premium'),
-    ('C1','Recliner'),('C2','Recliner'),('C3','Recliner'),('C4','Recliner')
-) AS layout(seat_number, type_name)
+CROSS JOIN (
+              SELECT 'A1' AS seat_number, 'Regular' AS type_name
+    UNION ALL SELECT 'A2', 'Regular'  UNION ALL SELECT 'A3', 'Regular'
+    UNION ALL SELECT 'A4', 'Regular'  UNION ALL SELECT 'B1', 'Premium'
+    UNION ALL SELECT 'B2', 'Premium'  UNION ALL SELECT 'B3', 'Premium'
+    UNION ALL SELECT 'B4', 'Premium'  UNION ALL SELECT 'C1', 'Recliner'
+    UNION ALL SELECT 'C2', 'Recliner' UNION ALL SELECT 'C3', 'Recliner'
+    UNION ALL SELECT 'C4', 'Recliner'
+) AS layout
 JOIN seat_types st ON st.type_name = layout.type_name;
 
 -- ---------------------------------------------------------
@@ -82,43 +95,43 @@ INSERT INTO users (name, email, password_hash) VALUES
 -- across both cinemas, both screens each.
 -- ---------------------------------------------------------
 INSERT INTO shows (movie_id, screen_id, show_time, base_price)
-SELECT m.movie_id, sc.screen_id, CURRENT_DATE + INTERVAL '1 day' + TIME '18:00', 250.00
+SELECT m.movie_id, sc.screen_id, TIMESTAMP(CURRENT_DATE + INTERVAL 1 DAY, '18:00:00'), 250.00
 FROM movies m JOIN screens sc ON sc.screen_name = 'Screen 1'
   JOIN cinemas c ON c.cinema_id = sc.cinema_id AND c.name = 'PVR Cinemas'
 WHERE m.title = 'Interstellar Odyssey'
 UNION ALL
-SELECT m.movie_id, sc.screen_id, CURRENT_DATE + INTERVAL '1 day' + TIME '20:00', 260.00
+SELECT m.movie_id, sc.screen_id, TIMESTAMP(CURRENT_DATE + INTERVAL 1 DAY, '20:00:00'), 260.00
 FROM movies m JOIN screens sc ON sc.screen_name = 'Screen 1'
   JOIN cinemas c ON c.cinema_id = sc.cinema_id AND c.name = 'INOX Megaplex'
 WHERE m.title = 'Interstellar Odyssey'
 UNION ALL
-SELECT m.movie_id, sc.screen_id, CURRENT_DATE + INTERVAL '1 day' + TIME '21:30', 220.00
+SELECT m.movie_id, sc.screen_id, TIMESTAMP(CURRENT_DATE + INTERVAL 1 DAY, '21:30:00'), 220.00
 FROM movies m JOIN screens sc ON sc.screen_name = 'Screen 1'
   JOIN cinemas c ON c.cinema_id = sc.cinema_id AND c.name = 'PVR Cinemas'
 WHERE m.title = 'The Last Monsoon'
 UNION ALL
-SELECT m.movie_id, sc.screen_id, CURRENT_DATE + INTERVAL '2 day' + TIME '15:00', 200.00
+SELECT m.movie_id, sc.screen_id, TIMESTAMP(CURRENT_DATE + INTERVAL 2 DAY, '15:00:00'), 200.00
 FROM movies m JOIN screens sc ON sc.screen_name = 'Screen 2'
   JOIN cinemas c ON c.cinema_id = sc.cinema_id AND c.name = 'PVR Cinemas'
 WHERE m.title = 'The Last Monsoon'
 UNION ALL
-SELECT m.movie_id, sc.screen_id, CURRENT_DATE + INTERVAL '2 day' + TIME '18:30', 240.00
+SELECT m.movie_id, sc.screen_id, TIMESTAMP(CURRENT_DATE + INTERVAL 2 DAY, '18:30:00'), 240.00
 FROM movies m JOIN screens sc ON sc.screen_name = 'Screen 1'
   JOIN cinemas c ON c.cinema_id = sc.cinema_id AND c.name = 'INOX Megaplex'
 WHERE m.title = 'Silicon Dreams'
 UNION ALL
-SELECT m.movie_id, sc.screen_id, CURRENT_DATE + INTERVAL '2 day' + TIME '21:00', 240.00
+SELECT m.movie_id, sc.screen_id, TIMESTAMP(CURRENT_DATE + INTERVAL 2 DAY, '21:00:00'), 240.00
 FROM movies m JOIN screens sc ON sc.screen_name = 'Screen 2'
   JOIN cinemas c ON c.cinema_id = sc.cinema_id AND c.name = 'INOX Megaplex'
 WHERE m.title = 'Silicon Dreams'
 UNION ALL
-SELECT m.movie_id, sc.screen_id, CURRENT_DATE + INTERVAL '3 day' + TIME '17:00', 210.00
+SELECT m.movie_id, sc.screen_id, TIMESTAMP(CURRENT_DATE + INTERVAL 3 DAY, '17:00:00'), 210.00
 FROM movies m JOIN screens sc ON sc.screen_name = 'Screen 2'
   JOIN cinemas c ON c.cinema_id = sc.cinema_id AND c.name = 'PVR Cinemas'
 WHERE m.title = 'Rangla Punjab'
 UNION ALL
 -- past show, used below for a completed/paid booking (history demo)
-SELECT m.movie_id, sc.screen_id, CURRENT_DATE - INTERVAL '1 day' + TIME '19:00', 250.00
+SELECT m.movie_id, sc.screen_id, TIMESTAMP(CURRENT_DATE - INTERVAL 1 DAY, '19:00:00'), 250.00
 FROM movies m JOIN screens sc ON sc.screen_name = 'Screen 2'
   JOIN cinemas c ON c.cinema_id = sc.cinema_id AND c.name = 'INOX Megaplex'
 WHERE m.title = 'Interstellar Odyssey';
@@ -159,13 +172,14 @@ JOIN seats se ON se.seat_id = ss.seat_id AND se.seat_number IN ('A1', 'A2')
 JOIN seat_types st ON st.seat_type_id = se.seat_type_id
 WHERE bk.status = 'confirmed' AND bk.total_amount = 500.00;
 
-UPDATE show_seats ss SET status = 'booked'
-FROM shows sh
+UPDATE show_seats ss
+JOIN shows sh ON sh.show_id = ss.show_id
 JOIN movies m ON m.movie_id = sh.movie_id AND m.title = 'Interstellar Odyssey'
 JOIN screens sc ON sc.screen_id = sh.screen_id AND sc.screen_name = 'Screen 1'
 JOIN cinemas c ON c.cinema_id = sc.cinema_id AND c.name = 'PVR Cinemas'
 JOIN seats se ON se.screen_id = sc.screen_id AND se.seat_number IN ('A1', 'A2')
-WHERE ss.show_id = sh.show_id AND ss.seat_id = se.seat_id;
+  AND se.seat_id = ss.seat_id
+SET ss.status = 'booked';
 
 INSERT INTO payments (booking_id, amount, status)
 SELECT booking_id, total_amount, 'success' FROM bookings
@@ -188,13 +202,15 @@ JOIN seats se ON se.seat_id = ss.seat_id AND se.seat_number IN ('B1', 'B2')
 JOIN seat_types st ON st.seat_type_id = se.seat_type_id
 WHERE bk.status = 'confirmed' AND bk.total_amount = 750.00;
 
-UPDATE show_seats ss SET status = 'booked'
-FROM shows sh
+UPDATE show_seats ss
+JOIN shows sh ON sh.show_id = ss.show_id
 JOIN movies m ON m.movie_id = sh.movie_id AND m.title = 'Interstellar Odyssey'
 JOIN screens sc ON sc.screen_id = sh.screen_id AND sc.screen_name = 'Screen 2'
 JOIN cinemas c ON c.cinema_id = sc.cinema_id AND c.name = 'INOX Megaplex'
 JOIN seats se ON se.screen_id = sc.screen_id AND se.seat_number IN ('B1', 'B2')
-WHERE ss.show_id = sh.show_id AND ss.seat_id = se.seat_id AND sh.show_time < NOW();
+  AND se.seat_id = ss.seat_id
+SET ss.status = 'booked'
+WHERE sh.show_time < NOW();
 
 INSERT INTO payments (booking_id, amount, status)
 SELECT booking_id, total_amount, 'success' FROM bookings
@@ -219,13 +235,14 @@ JOIN seats se ON se.seat_id = ss.seat_id AND se.seat_number = 'C1'
 JOIN seat_types st ON st.seat_type_id = se.seat_type_id
 WHERE bk.status = 'pending' AND bk.total_amount = 400.00;
 
-UPDATE show_seats ss SET status = 'locked', locked_until = NOW() + INTERVAL '10 minutes'
-FROM shows sh
+UPDATE show_seats ss
+JOIN shows sh ON sh.show_id = ss.show_id
 JOIN movies m ON m.movie_id = sh.movie_id AND m.title = 'The Last Monsoon'
 JOIN screens sc ON sc.screen_id = sh.screen_id AND sc.screen_name = 'Screen 2'
 JOIN cinemas c ON c.cinema_id = sc.cinema_id AND c.name = 'PVR Cinemas'
 JOIN seats se ON se.screen_id = sc.screen_id AND se.seat_number = 'C1'
-WHERE ss.show_id = sh.show_id AND ss.seat_id = se.seat_id;
+  AND se.seat_id = ss.seat_id
+SET ss.status = 'locked', ss.locked_until = NOW(3) + INTERVAL 10 MINUTE;
 
 INSERT INTO payments (booking_id, amount, status)
 SELECT booking_id, total_amount, 'pending' FROM bookings
@@ -250,13 +267,14 @@ WHERE bk.status = 'cancelled' AND bk.total_amount = 220.00;
 
 -- seat reverts to available once the booking is cancelled
 -- (show_seats.status already 'available' by default; kept explicit here for clarity)
-UPDATE show_seats ss SET status = 'available', locked_until = NULL
-FROM shows sh
+UPDATE show_seats ss
+JOIN shows sh ON sh.show_id = ss.show_id
 JOIN movies m ON m.movie_id = sh.movie_id AND m.title = 'The Last Monsoon'
 JOIN screens sc ON sc.screen_id = sh.screen_id AND sc.screen_name = 'Screen 1'
 JOIN cinemas c ON c.cinema_id = sc.cinema_id AND c.name = 'PVR Cinemas'
 JOIN seats se ON se.screen_id = sc.screen_id AND se.seat_number = 'A1'
-WHERE ss.show_id = sh.show_id AND ss.seat_id = se.seat_id;
+  AND se.seat_id = ss.seat_id
+SET ss.status = 'available', ss.locked_until = NULL;
 
 INSERT INTO payments (booking_id, amount, status)
 SELECT booking_id, total_amount, 'refunded' FROM bookings
